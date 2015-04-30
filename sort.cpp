@@ -2,7 +2,9 @@
 #include <pmmintrin.h>
 #include <emmintrin.h>
 #include <fcntl.h>
+#ifdef __SSE4_1__
 #include <smmintrin.h>
+#endif
 #include <string.h>
 #include <getopt.h>
 #include <omp.h>
@@ -260,8 +262,25 @@ void funcion (float z[],float **v,int var1){
 	Ff = _mm_shuffle_ps(D,D,_MM_SHUFFLE(0,0,0,0));
 	aux1 = _mm_cmpgt_ps(Ef, Ff); 
 	aux2 = _mm_cmplt_ps(Ef,Ff);
-	or2 = _mm_blendv_ps(B, D, aux1);
+
+	#ifndef __SSE4_1__  // pre-SSE4 implementation
+    __m128 d0_masked, d1_masked,d2_masked,d3_masked;
+	#endif
+
+
+    #ifdef __SSE4_1__   // SSE4 implementation
+    or2 = _mm_blendv_ps(B, D, aux1);
 	or3 = _mm_blendv_ps(B,D,aux2);
+	#else               // pre-SSE4 implementation
+	d0_masked = _mm_andnot_ps(aux1,B);
+	d1_masked = _mm_and_ps(aux1,D);
+	or2 = _mm_or_ps(d0_masked,d1_masked);
+	d2_masked = _mm_andnot_ps(aux2,B);
+	d3_masked = _mm_and_ps(aux2,D);
+	or3 = _mm_or_ps(d2_masked,d3_masked);
+
+	#endif	
+
 
 	or2 = _mm_shuffle_ps(or2,or2,_MM_SHUFFLE(0,1,2,3));
 	reg4=bmn(reg3.reg2,or2);
@@ -376,9 +395,9 @@ int main(int argc, char *argv[]){
 	float **matriz3 = (float **) malloc(sizeof(float *)*aux);
 	int s;
     for(s=0; s<aux; s++){
-    /* Allocate array, store pointer  */
-    matriz3[s] = (float *) malloc(sizeof(float)*n);
+    	matriz3[s] = (float *) malloc(sizeof(float)*n);
 	}
+
 	#pragma omp parallel private(tid) shared(matriz2)
 	{
 		#pragma omp for schedule(static, numero2) ordered
@@ -393,12 +412,15 @@ int main(int argc, char *argv[]){
 	printf("%f\n",tamanio );
 	int filas = aux;
 	int columnas=16;
+
 	float *salidaFinal = merge(matriz3,filas,columnas);	
 
 	
 	if(debug == 1){
 		MostrarNumeros(salidaFinal, n*filas);
 	}	
+
+	printf("escribe en el archivo\n");
 
 	int filesdesc2 = open(archivo_salida, O_WRONLY | O_CREAT, 0644);
 	float nwrite;
